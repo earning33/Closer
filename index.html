@@ -166,34 +166,14 @@ async function signup(e){
     return;
   }
   if(age<18||age>120){setAuthMsg('CLOSER requires members to be 18+.','err');return}
-  setAuthMsg('Checking username availability…');
-  const {data:usernameAvailable,error:usernameCheckError}=await sb.rpc('is_username_available',{p_username:username});
-  if(usernameCheckError){
-    console.error('Username availability check failed:',usernameCheckError);
-    setAuthMsg('Could not check username availability. Please try again.','err');
-    return;
-  }
-  if(usernameAvailable!==true){
-    setAuthMsg('That username is already taken. Please choose another username.','err');
-    return;
-  }
   setAuthMsg('Creating account…');
   const {data,error}=await sb.auth.signUp({email,password:pass,options:{data:{full_name:name,username,age}}});
-  if(error){
-    if(/database error saving new user/i.test(error.message)){
-      const retryCheck=await sb.rpc('is_username_available',{p_username:username});
-      if(!retryCheck.error&&retryCheck.data===false){
-        setAuthMsg('That username has just been taken. Please choose another username.','err');
-        return;
-      }
-    }
-    setAuthMsg(error.message,'err');
-    return;
-  }
+  if(error){setAuthMsg(error.message,'err');return}
+  const successMessage='Account created. If your username was already in use, CLOSER assigned a unique version. Check your email to verify the account, then log in.';
   if(data.user&&!data.session){
-    setAuthMsg('Account created. Check your email to verify the account, then log in.','ok');
+    setAuthMsg(successMessage,'ok');
   }else{
-    setAuthMsg('Account created.','ok');
+    setAuthMsg('Account created. If needed, your username has a unique suffix.','ok');
   }
 }
 async function forgotPassword(){const email=prompt('Enter your CLOSER email');if(!email)return;const {error}=await sb.auth.resetPasswordForEmail(email.trim(),{redirectTo:location.href});if(error)showToast(error.message);else showToast('Password reset email sent.')}
