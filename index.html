@@ -166,14 +166,40 @@ async function signup(e){
     return;
   }
   if(age<18||age>120){setAuthMsg('CLOSER requires members to be 18+.','err');return}
+  const cooldownKey='closer_signup_cooldown_'+email;
+  const lastAttempt=Number(localStorage.getItem(cooldownKey)||0);
+  const secondsLeft=Math.ceil((60000-(Date.now()-lastAttempt))/1000);
+  if(secondsLeft>0){
+    setAuthMsg('Please wait '+secondsLeft+' seconds before trying this email again. This prevents duplicate verification emails.','err');
+    return;
+  }
+  const submit=e.submitter||document.querySelector('#signupForm button[type="submit"]');
+  if(submit)submit.disabled=true;
+  localStorage.setItem(cooldownKey,String(Date.now()));
   setAuthMsg('Creating account…');
-  const {data,error}=await sb.auth.signUp({email,password:pass,options:{data:{full_name:name,username,age}}});
-  if(error){setAuthMsg(error.message,'err');return}
-  const successMessage='Account created. If your username was already in use, CLOSER assigned a unique version. Check your email to verify the account, then log in.';
-  if(data.user&&!data.session){
-    setAuthMsg(successMessage,'ok');
-  }else{
-    setAuthMsg('Account created. If needed, your username has a unique suffix.','ok');
+  try{
+    const {data,error}=await sb.auth.signUp({email,password:pass,options:{data:{full_name:name,username,age}}});
+    if(error){
+      const code=error.code||'';
+      const status=error.status||0;
+      if(status===429||code==='over_email_send_rate_limit'||/email rate limit exceeded|too many emails/i.test(error.message||'')){
+        setAuthMsg('Email sending is temporarily rate-limited. Please wait a little before retrying. CLOSER is configured to prevent repeated email requests.','err');
+      }else{
+        setAuthMsg(error.message,'err');
+      }
+      return;
+    }
+    const successMessage='Account created. If your username was already in use, CLOSER assigned a unique version. Check your email to verify the account, then log in.';
+    if(data.user&&!data.session){
+      setAuthMsg(successMessage,'ok');
+    }else{
+      setAuthMsg('Account created. If needed, your username has a unique suffix.','ok');
+    }
+  }catch(err){
+    console.error('Signup failed:',err);
+    setAuthMsg('Signup could not be completed. Please try again shortly.','err');
+  }finally{
+    if(submit)setTimeout(()=>{submit.disabled=false},1500);
   }
 }
 async function forgotPassword(){const email=prompt('Enter your CLOSER email');if(!email)return;const {error}=await sb.auth.resetPasswordForEmail(email.trim(),{redirectTo:location.href});if(error)showToast(error.message);else showToast('Password reset email sent.')}
