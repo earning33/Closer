@@ -42,7 +42,7 @@
     <div class="authtabs"><button id="loginTab" class="active" onclick="switchAuth('login')">Log in</button><button id="signupTab" onclick="switchAuth('signup')">Create account</button></div>
     <div id="authMsg" class="msg hidden"></div>
     <form id="loginForm" class="form" onsubmit="login(event)"><div><label class="label">Email</label><input id="loginEmail" class="input" type="email" required autocomplete="email"></div><div><label class="label">Password</label><input id="loginPassword" class="input" type="password" required autocomplete="current-password"></div><button class="primary" type="submit">Log in</button><button class="secondary" type="button" onclick="forgotPassword()">Forgot password?</button></form>
-    <form id="signupForm" class="form authhidden" onsubmit="signup(event)"><div><label class="label">Full name</label><input id="signupName" class="input" required maxlength="80"></div><div><label class="label">Username</label><input id="signupUsername" class="input" required maxlength="30" pattern="[A-Za-z0-9_.]+" placeholder="yourname"></div><div><label class="label">Age</label><input id="signupAge" class="input" type="number" min="18" max="120" required></div><div><label class="label">Email</label><input id="signupEmail" class="input" type="email" required autocomplete="email"></div><div><label class="label">Password</label><input id="signupPassword" class="input" type="password" minlength="8" required autocomplete="new-password"></div><div><label class="label">Confirm password</label><input id="signupConfirm" class="input" type="password" minlength="8" required autocomplete="new-password"></div><button class="primary" type="submit">Create account</button></form>
+    <form id="signupForm" class="form authhidden" onsubmit="signup(event)"><div><label class="label">Full name</label><input id="signupName" class="input" required maxlength="80"></div><div><label class="label">Username</label><input id="signupUsername" class="input" required minlength="3" maxlength="30" pattern="[A-Za-z0-9_.]+" placeholder="yourname"></div><div><label class="label">Age</label><input id="signupAge" class="input" type="number" min="18" max="120" required></div><div><label class="label">Email</label><input id="signupEmail" class="input" type="email" required autocomplete="email"></div><div><label class="label">Password</label><input id="signupPassword" class="input" type="password" minlength="8" required autocomplete="new-password"></div><div><label class="label">Confirm password</label><input id="signupConfirm" class="input" type="password" minlength="8" required autocomplete="new-password"></div><button class="primary" type="submit">Create account</button></form>
     <p style="font-size:9px;margin-top:18px">By continuing you agree to use CLOSER responsibly. Real account security is enforced by Supabase Auth and database RLS.</p>
   </div>
 </div>
@@ -152,7 +152,50 @@ async function initializeCloser(){
 }
 function switchAuth(mode){const login=mode==='login';$('loginForm').classList.toggle('authhidden',!login);$('signupForm').classList.toggle('authhidden',login);$('loginTab').classList.toggle('active',login);$('signupTab').classList.toggle('active',!login);$('authTitle').textContent=login?'Welcome back':'Create your account';$('authSub').textContent=login?'Sign in to your CLOSER account.':'Join CLOSER and start connecting.';$('authMsg').classList.add('hidden')}
 async function login(e){e.preventDefault();if(!sb){setAuthMsg('Connecting to CLOSER. Please try again in a moment.','err');return}setAuthMsg('Signing in…');const {error}=await sb.auth.signInWithPassword({email:$('loginEmail').value.trim(),password:$('loginPassword').value});if(error){setAuthMsg(error.message,'err');return}setAuthMsg('Signed in.','ok')}
-async function signup(e){e.preventDefault();if(!sb){setAuthMsg('Connecting to CLOSER. Please try again in a moment.','err');return}const pass=$('signupPassword').value;if(pass!==$('signupConfirm').value){setAuthMsg('Passwords do not match.','err');return}const email=$('signupEmail').value.trim().toLowerCase(),name=$('signupName').value.trim(),username=$('signupUsername').value.trim().toLowerCase(),age=Number($('signupAge').value);if(age<18){setAuthMsg('CLOSER requires members to be 18+.','err');return}setAuthMsg('Creating account…');const {data,error}=await sb.auth.signUp({email,password:pass,options:{data:{full_name:name,username,age}}});if(error){setAuthMsg(error.message,'err');return}if(data.user&&!data.session){setAuthMsg('Account created. Check your email to verify the account, then log in.','ok')}else{setAuthMsg('Account created.','ok')}}
+async function signup(e){
+  e.preventDefault();
+  if(!sb){setAuthMsg('Connecting to CLOSER. Please try again in a moment.','err');return}
+  const pass=$('signupPassword').value;
+  if(pass!==$('signupConfirm').value){setAuthMsg('Passwords do not match.','err');return}
+  const email=$('signupEmail').value.trim().toLowerCase();
+  const name=$('signupName').value.trim();
+  const username=$('signupUsername').value.trim().toLowerCase();
+  const age=Number($('signupAge').value);
+  if(!/^[a-z0-9_.]{3,30}$/.test(username)){
+    setAuthMsg('Username must be 3–30 characters and use only letters, numbers, dots or underscores.','err');
+    return;
+  }
+  if(age<18||age>120){setAuthMsg('CLOSER requires members to be 18+.','err');return}
+  setAuthMsg('Checking username availability…');
+  const {data:usernameAvailable,error:usernameCheckError}=await sb.rpc('is_username_available',{p_username:username});
+  if(usernameCheckError){
+    console.error('Username availability check failed:',usernameCheckError);
+    setAuthMsg('Could not check username availability. Please try again.','err');
+    return;
+  }
+  if(usernameAvailable!==true){
+    setAuthMsg('That username is already taken. Please choose another username.','err');
+    return;
+  }
+  setAuthMsg('Creating account…');
+  const {data,error}=await sb.auth.signUp({email,password:pass,options:{data:{full_name:name,username,age}}});
+  if(error){
+    if(/database error saving new user/i.test(error.message)){
+      const retryCheck=await sb.rpc('is_username_available',{p_username:username});
+      if(!retryCheck.error&&retryCheck.data===false){
+        setAuthMsg('That username has just been taken. Please choose another username.','err');
+        return;
+      }
+    }
+    setAuthMsg(error.message,'err');
+    return;
+  }
+  if(data.user&&!data.session){
+    setAuthMsg('Account created. Check your email to verify the account, then log in.','ok');
+  }else{
+    setAuthMsg('Account created.','ok');
+  }
+}
 async function forgotPassword(){const email=prompt('Enter your CLOSER email');if(!email)return;const {error}=await sb.auth.resetPasswordForEmail(email.trim(),{redirectTo:location.href});if(error)showToast(error.message);else showToast('Password reset email sent.')}
 async function signout(){await sb.auth.signOut();location.reload()}
 async function boot(){const {data:{session}}=await sb.auth.getSession();if(session){await startApp(session.user)}sb.auth.onAuthStateChange(async(_e,session)=>{if(session&&!currentUser)await startApp(session.user);if(!session){currentUser=null;$('app').classList.add('hidden');$('authApp').classList.remove('hidden')}})}
