@@ -178,7 +178,7 @@ async function signup(e){
   localStorage.setItem(cooldownKey,String(Date.now()));
   setAuthMsg('Creating account…');
   try{
-    const {data,error}=await sb.auth.signUp({email,password:pass,options:{data:{full_name:name,username,age}}});
+    const {data,error}=await sb.auth.signUp({email,password:pass,options:{data:{full_name:name,username,age},emailRedirectTo:'https://closer-one-rust.vercel.app'}});
     if(error){
       const code=error.code||'';
       const status=error.status||0;
