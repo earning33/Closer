@@ -39,13 +39,25 @@
 <div id="authApp" class="authwrap">
   <div class="auth">
     <div class="brand">CLOSER</div>
-    <h1 id="authTitle" style="margin-top:18px">Welcome back</h1>
-    <p id="authSub">Sign in to your CLOSER account.</p>
-    <div class="authtabs"><button id="loginTab" class="active" onclick="switchAuth('login')">Log in</button><button id="signupTab" onclick="switchAuth('signup')">Create account</button></div>
+    <h1 id="authTitle" style="margin-top:18px">Welcome to CLOSER</h1>
+    <p id="authSub">Create or access your account securely with your Google account.</p>
     <div id="authMsg" class="msg hidden"></div>
-    <form id="loginForm" class="form" onsubmit="login(event)"><div><label class="label">Email</label><input id="loginEmail" class="input" type="email" required autocomplete="email"></div><div><label class="label">Password</label><input id="loginPassword" class="input" type="password" required autocomplete="current-password"></div><button class="primary" type="submit">Log in</button><button class="secondary" type="button" onclick="forgotPassword()">Forgot password?</button></form>
-    <form id="signupForm" class="form authhidden" onsubmit="signup(event)"><div><label class="label">Full name</label><input id="signupName" class="input" required maxlength="80"></div><div><label class="label">Username</label><input id="signupUsername" class="input" required minlength="3" maxlength="30" pattern="[A-Za-z0-9_.]+" placeholder="yourname"></div><div><label class="label">Age</label><input id="signupAge" class="input" type="number" min="18" max="120" required></div><div><label class="label">Email</label><input id="signupEmail" class="input" type="email" required autocomplete="email"></div><div><label class="label">Password</label><input id="signupPassword" class="input" type="password" minlength="8" required autocomplete="new-password"></div><div><label class="label">Confirm password</label><input id="signupConfirm" class="input" type="password" minlength="8" required autocomplete="new-password"></div><button class="primary" type="submit">Create account</button></form>
-    <p style="font-size:9px;margin-top:18px">By continuing you agree to use CLOSER responsibly. Real account security is enforced by Supabase Auth and database RLS.</p>
+    <button class="primary" type="button" onclick="googleSignIn()" style="height:48px;font-size:12px;display:flex;align-items:center;justify-content:center;gap:9px">Continue with Google</button>
+    <div class="settings-note" style="margin-top:12px">No CLOSER password is required. Google handles authentication, and CLOSER will ask only for the minimum profile details needed after your first sign-in.</div>
+    <p style="font-size:9px;margin-top:18px">By continuing you agree to use CLOSER responsibly. Authentication is handled by Supabase Auth and Google; database access remains protected by RLS.</p>
+  </div>
+</div>
+
+<div id="googleProfileModal" class="modal" onclick="if(event.target===this){}">
+  <div class="modalbox" style="max-width:460px">
+    <div class="modalhead"><div><h3 style="margin:0;font-size:17px">Finish your CLOSER profile</h3><p style="margin:4px 0 0;color:var(--muted);font-size:10px">One quick step before you enter CLOSER.</p></div></div>
+    <div class="settings-note" style="margin-top:14px">Your Google account confirms who you are. For safety, CLOSER still needs your age to enforce the 18+ dating rule and a username for your profile.</div>
+    <form class="form" onsubmit="completeGoogleProfile(event)" style="margin-top:14px">
+      <div><label class="label">Full name</label><input id="googleProfileName" class="input" maxlength="80" required></div>
+      <div><label class="label">Username</label><input id="googleProfileUsername" class="input" minlength="3" maxlength="30" pattern="[A-Za-z0-9_.]+" required placeholder="yourname"></div>
+      <div><label class="label">Age</label><input id="googleProfileAge" class="input" type="number" min="18" max="120" required></div>
+      <button class="primary" type="submit">Continue to CLOSER</button>
+    </form>
   </div>
 </div>
 
@@ -193,62 +205,39 @@ async function initializeCloser(){
     setAuthMsg(error.message||'Could not connect to CLOSER. Check deployment environment variables.','err');
   }
 }
-function switchAuth(mode){const login=mode==='login';$('loginForm').classList.toggle('authhidden',!login);$('signupForm').classList.toggle('authhidden',login);$('loginTab').classList.toggle('active',login);$('signupTab').classList.toggle('active',!login);$('authTitle').textContent=login?'Welcome back':'Create your account';$('authSub').textContent=login?'Sign in to your CLOSER account.':'Join CLOSER and start connecting.';$('authMsg').classList.add('hidden')}
-async function login(e){e.preventDefault();if(!sb){setAuthMsg('Connecting to CLOSER. Please try again in a moment.','err');return}setAuthMsg('Signing in…');const {error}=await sb.auth.signInWithPassword({email:$('loginEmail').value.trim(),password:$('loginPassword').value});if(error){setAuthMsg(error.message,'err');return}setAuthMsg('Signed in.','ok')}
-async function signup(e){
-  e.preventDefault();
+async function googleSignIn(){
   if(!sb){setAuthMsg('Connecting to CLOSER. Please try again in a moment.','err');return}
-  const pass=$('signupPassword').value;
-  if(pass!==$('signupConfirm').value){setAuthMsg('Passwords do not match.','err');return}
-  const email=$('signupEmail').value.trim().toLowerCase();
-  const name=$('signupName').value.trim();
-  const username=$('signupUsername').value.trim().toLowerCase();
-  const age=Number($('signupAge').value);
-  if(!/^[a-z0-9_.]{3,30}$/.test(username)){
-    setAuthMsg('Username must be 3–30 characters and use only letters, numbers, dots or underscores.','err');
-    return;
-  }
-  if(age<18||age>120){setAuthMsg('CLOSER requires members to be 18+.','err');return}
-  const cooldownKey='closer_signup_cooldown_'+email;
-  const lastAttempt=Number(localStorage.getItem(cooldownKey)||0);
-  const secondsLeft=Math.ceil((60000-(Date.now()-lastAttempt))/1000);
-  if(secondsLeft>0){
-    setAuthMsg('Please wait '+secondsLeft+' seconds before trying this email again. This prevents duplicate verification emails.','err');
-    return;
-  }
-  const submit=e.submitter||document.querySelector('#signupForm button[type="submit"]');
-  if(submit)submit.disabled=true;
-  localStorage.setItem(cooldownKey,String(Date.now()));
-  setAuthMsg('Creating account…');
-  try{
-    const {data,error}=await sb.auth.signUp({email,password:pass,options:{data:{full_name:name,username,age},emailRedirectTo:'https://closer-one-rust.vercel.app'}});
-    if(error){
-      const code=error.code||'';
-      const status=error.status||0;
-      if(status===429||code==='over_email_send_rate_limit'||/email rate limit exceeded|too many emails/i.test(error.message||'')){
-        setAuthMsg('Email sending is temporarily rate-limited. Please wait a little before retrying. CLOSER is configured to prevent repeated email requests.','err');
-      }else{
-        setAuthMsg(error.message,'err');
-      }
-      return;
-    }
-    const successMessage='Account created. If your username was already in use, CLOSER assigned a unique version. Check your email to verify the account, then log in.';
-    if(data.user&&!data.session){
-      setAuthMsg(successMessage,'ok');
-    }else{
-      setAuthMsg('Account created. If needed, your username has a unique suffix.','ok');
-    }
-  }catch(err){
-    console.error('Signup failed:',err);
-    setAuthMsg('Signup could not be completed. Please try again shortly.','err');
-  }finally{
-    if(submit)setTimeout(()=>{submit.disabled=false},1500);
-  }
+  setAuthMsg('Opening Google…');
+  const redirectTo=window.location.origin+window.location.pathname;
+  const {error}=await sb.auth.signInWithOAuth({provider:'google',options:{redirectTo}});
+  if(error){setAuthMsg(error.message||'Google sign-in is not available yet.','err');return}
 }
-async function forgotPassword(){const email=prompt('Enter your CLOSER email');if(!email)return;const {error}=await sb.auth.resetPasswordForEmail(email.trim(),{redirectTo:location.href});if(error)showToast(error.message);else showToast('Password reset email sent.')}
+async function completeGoogleProfile(e){
+  e.preventDefault();
+  if(!currentUser||!sb)return;
+  const name=$('googleProfileName').value.trim();
+  const username=$('googleProfileUsername').value.trim().toLowerCase();
+  const age=Number($('googleProfileAge').value);
+  if(!/^[a-z0-9_.]{3,30}$/.test(username)){showToast('Username must be 3–30 characters and use only letters, numbers, dots or underscores.');return}
+  if(age<18||age>120){showToast('CLOSER requires members to be 18 or older.');return}
+  const submit=e.submitter;if(submit)submit.disabled=true;
+  const {data,error}=await sb.from('profiles').update({full_name:name,username,age,updated_at:new Date().toISOString()}).eq('id',currentUser.id).select('id,email,full_name,username,age,verified,status,avatar_url,cover_url,avatar_public_id,cover_public_id,bio,profile_visibility,professional_mode').single();
+  if(error){
+    if(/username|unique/i.test(error.message||''))showToast('That username is already in use. Choose another.');
+    else showToast(error.message||'Could not finish your profile.');
+    if(submit)submit.disabled=false;
+    return;
+  }
+  await sb.auth.updateUser({data:{full_name:name,username,age}});
+  currentProfile=data;
+  applyProfile();
+  closeModal('googleProfileModal');
+  showToast('Welcome to CLOSER.');
+  if(submit)submit.disabled=false;
+}
 async function signout(){await sb.auth.signOut();location.reload()}
 async function boot(){const {data:{session}}=await sb.auth.getSession();if(session){await startApp(session.user)}sb.auth.onAuthStateChange(async(_e,session)=>{if(session&&!currentUser)await startApp(session.user);if(!session){currentUser=null;$('app').classList.add('hidden');$('authApp').classList.remove('hidden')}})}
-async function startApp(user){currentUser=user;const {data:profile,error}=await sb.from('profiles').select('id,email,full_name,username,age,verified,status,avatar_url,cover_url,avatar_public_id,cover_public_id,bio,profile_visibility,professional_mode').eq('id',user.id).single();if(error){showToast('Could not load profile: '+error.message);return}currentProfile=profile;if(profile.status!=='Active'){showToast('This account is currently '+profile.status);await sb.auth.signOut();return}const roleResult=await sb.from('admin_roles').select('role').eq('user_id',user.id).maybeSingle();currentAdminRole=roleResult.data?.role||null;closerAdminRole=currentAdminRole;$('adminNav').hidden=!currentAdminRole;$('adminRoleBadge').textContent=currentAdminRole||'Admin';$('authApp').classList.add('hidden');$('app').classList.remove('hidden');applyProfile();await ensureSettings();await Promise.all([loadHome(),loadFriends(),loadNotifications(),loadMyPosts(),loadRailPeople()]);subscribeRealtime()}
+async async function startApp(user){currentUser=user;const {data:profile,error}=await sb.from('profiles').select('id,email,full_name,username,age,verified,status,avatar_url,cover_url,avatar_public_id,cover_public_id,bio,profile_visibility,professional_mode').eq('id',user.id).single();if(error){showToast('Could not load profile: '+error.message);return}currentProfile=profile;if(profile.status!=='Active'){showToast('This account is currently '+profile.status);await sb.auth.signOut();return}const roleResult=await sb.from('admin_roles').select('role').eq('user_id',user.id).maybeSingle();currentAdminRole=roleResult.data?.role||null;closerAdminRole=currentAdminRole;$('adminNav').hidden=!currentAdminRole;$('adminRoleBadge').textContent=currentAdminRole||'Admin';$('authApp').classList.add('hidden');$('app').classList.remove('hidden');applyProfile();await ensureSettings();await Promise.all([loadHome(),loadFriends(),loadNotifications(),loadMyPosts(),loadRailPeople()]);subscribeRealtime();if(profile.age===null){$('googleProfileName').value=profile.full_name||user.user_metadata?.full_name||user.user_metadata?.name||'';const suggested=(user.email||'').split('@')[0].toLowerCase().replace(/[^a-z0-9_.]/g,'').slice(0,30);$('googleProfileUsername').value=(suggested.length>=3?suggested:'member');$('googleProfileAge').value='';openModal('googleProfileModal')}}
 function initials(name){return String(name||'C').trim().split(/\s+/).filter(Boolean).slice(0,2).map(x=>x[0].toUpperCase()).join('')||'C'}
 function avatarHtml(p,cls='avatar'){const style=p?.avatar_url?`style="background-image:url('${esc(p.avatar_url)}')"`:'';return `<div class="${cls}" ${style}>${p?.avatar_url?'':esc(initials(p?.full_name||p?.username))}</div>`}
 function applyProfile(){const p=currentProfile;const name=p.full_name||'CLOSER Member',handle='@'+(p.username||'member');['topName','sideName','railName','profileName'].forEach(id=>$(id).textContent=name);['topHandle','sideHandle','railHandle','profileMeta'].forEach(id=>$(id).textContent=handle);['topAvatar','sideAvatar','railAvatar','profileAvatar','composerAvatar'].forEach(id=>{const e=$(id);e.style.backgroundImage=p.avatar_url?`url('${p.avatar_url}')`:'';e.textContent=p.avatar_url?'':initials(name)});$('profileBio').textContent=p.bio||'No bio yet.';$('profileCover').style.backgroundImage=p.cover_url?`url('${p.cover_url}')`:'';$('visibilitySetting').value=p.profile_visibility||'public';$('professionalSetting').checked=!!p.professional_mode}
